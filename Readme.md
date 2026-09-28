@@ -59,25 +59,34 @@ torchvision
 python-dotenv
 ```
 
-### Optional: GPU (NVIDIA only)
+### GPU Support (Optional)
 
-Check for a GPU with `nvidia-smi`, then install the CUDA build of PyTorch (pick the command matching your CUDA version at [pytorch.org](https://pytorch.org/get-started/locally)):
+The script automatically detects and uses an NVIDIA GPU if available, but runs perfectly fine on CPU alone (just slower).
 
-```powershell
-python -m pip uninstall -y torch torchvision
-python -m pip install torch torchvision --index-url https://download.pytorch.org/whl/cu124
-python -c "import torch; print(torch.cuda.is_available())"
-```
+**If you have an NVIDIA GPU and want to use it:**
 
-Then make the OCR reader use it automatically:
+1. Verify your GPU is detected:
+   ```powershell
+   nvidia-smi
+   ```
 
+2. Install the CUDA build of PyTorch (choose the command matching your CUDA version at [pytorch.org](https://pytorch.org/get-started/locally)):
+   ```powershell
+   python -m pip uninstall -y torch torchvision
+   python -m pip install torch torchvision --index-url https://download.pytorch.org/whl/cu124
+   ```
+
+3. Confirm GPU is available:
+   ```powershell
+   python -c "import torch; print(torch.cuda.is_available())"
+   ```
+
+The script automatically enables GPU acceleration when detected via:
 ```python
-import torch
 _reader = easyocr.Reader(["en"], gpu=torch.cuda.is_available())
 ```
 
-
-Without a GPU everything still works on the CPU, just more slowly.
+**Note:** GPU setup is completely optional. Skip this section if you don't have an NVIDIA GPU or prefer to use CPU.
 
 ## Configuration
 
