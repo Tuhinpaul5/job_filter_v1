@@ -76,6 +76,7 @@ import torch
 _reader = easyocr.Reader(["en"], gpu=torch.cuda.is_available())
 ```
 
+
 Without a GPU everything still works on the CPU, just more slowly.
 
 ## Configuration
