@@ -1,7 +1,7 @@
 # Secrets / local settings
 .env
 !.env.example
-
+backup/*
 # Virtual environments
 .venv/
 venv/
