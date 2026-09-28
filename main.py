@@ -102,7 +102,7 @@ def get_router() -> Router:
         _router = Router()
     return _router
 
-
+# OCR fucn to extract text from image using easyocr
 def extract_text(image_path: Path) -> str:
     """OCR one image and return its text."""
     global _reader
@@ -111,16 +111,15 @@ def extract_text(image_path: Path) -> str:
     lines = _reader.readtext(str(image_path), detail=0, paragraph=True)
     return "\n".join(lines)
 
-
+# Checks if email has a domain (Easy to spoof)
 def email_domains(text: str) -> set[str]:
     return {d.lower() for d in re.findall(r"[\w.+-]+@([\w-]+(?:\.[\w-]+)+)", text)}
-
 
 def keyword_hits(text: str) -> int:
     lower = text.lower()
     return sum(1 for k in JOB_KEYWORDS if re.search(r"\b" + re.escape(k), lower))
 
-
+# For junk image filtering screenshots
 def check_is_job_post(text: str) -> dict:
     """Stage 1: keyword check + model classification."""
     hits = keyword_hits(text)
@@ -177,7 +176,7 @@ def process_image(path: Path) -> tuple[str, str]:
     """Run the full pipeline on one image. Returns (type, outcome) for the summary."""
     print(f"\n===== {path.name} =====")
 
-    # OCR
+    # OCR for text extraction
     text = extract_text(path)
     if len(text.strip()) < MIN_TEXT_CHARS:
         print("[skip] Very little text found. Use a sharper, higher-resolution screenshot.")
