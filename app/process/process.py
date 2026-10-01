@@ -10,8 +10,6 @@ Usage:  python laya_jd_prob.py                 (uses IMAGE_FOLDER from .env)
 
 Do NOT name this file laya.py (it would shadow the library).
 """
-
-import sys
 from pathlib import Path
 
 from app.helpers.ocr import Ocr
@@ -21,6 +19,7 @@ from app.process.context import FREE_MAIL, GATE_QUESTIONS, IMAGE_EXTS, KEYWORD_P
 from config import IMAGE_FOLDER
 from laya import Router
 
+import tempfile
 
 
 class Process:
@@ -33,6 +32,18 @@ class Process:
 
         self.ocr = Ocr()
         self.image_processor = ImageProcessor()
+
+    @staticmethod
+    def _jsonable(obj):
+        """Make sets / numpy types JSON serializable."""
+        if isinstance(obj, dict):
+            return {str(k): Process._jsonable(v) for k, v in obj.items()}
+        if isinstance(obj, (list, tuple, set, frozenset)):
+            items = sorted(obj) if isinstance(obj, (set, frozenset)) else obj
+            return [Process._jsonable(v) for v in items]
+        if hasattr(obj, "item"):  # numpy scalar
+            return obj.item()
+        return obj
 
     def get_router(self) -> Router:
         if self._router is None:
@@ -77,71 +88,76 @@ class Process:
         return {"verdict": verdict, "scam_score": answers["scam_score"],
                 "probs": probs, "domains": domains, "decision": decision}
 
-    def find_images(self) -> list[Path]:
-        """Use the folder/file from the command line if given, else IMAGE_FOLDER."""
-        target = Path(sys.argv[1]) if len(sys.argv) > 1 else IMAGE_FOLDER
-        if target.is_file():
-            return [target]
-        if not target.is_dir():
-            sys.exit(f"Folder not found: {target}")
-        images = sorted(p for p in target.iterdir() if p.suffix.lower() in IMAGE_EXTS)
-        if not images:
-            sys.exit(f"No images ({', '.join(sorted(IMAGE_EXTS))}) found in: {target}")
-        return images
 
-    def process_image(self, path: Path) -> tuple[str, str]:
-        """Run the full pipeline on one image. Returns (type, outcome) for the summary."""
-        print(f"\n===== {path.name} =====")
-
-        # OCR for text extraction
+    def _analyze_path(self, path: Path) -> dict:
+        """Run the pipeline on one image and return a structured verdict."""
         text = self.ocr.extract_text(path)
         if len(text.strip()) < MIN_TEXT_CHARS:
-            print("[skip] Very little text found. Use a sharper, higher-resolution screenshot.")
-            return "no text", "skipped"
+            return {"verdict": "skipped",
+                    "reason": "Very little text found. Use a sharper, higher-resolution screenshot."}
 
-        print("--- Extracted text (check OCR quality) ---")
-        print(text)
-        print(f"--- End of text ({len(text)} chars) ---")
-
-        # Stage 1: is it a job posting?
         gate = self.check_is_job_post(text)
-        print(f"\n--- Stage 1: content check ---")
-        print(f"Model says: {gate['kind']} | job keywords found: {gate['hits']}")
         if not gate["is_job"]:
             reason = {"job_seeker": "this looks like a resume / job-seeker post",
-                    "other": "this does not look like a job posting"}.get(gate["kind"], "not a job posting")
-            print(f">> Skipped: {reason}.")
-            return gate["kind"], "skipped (not a job posting) ⏩"
+                      "other": "this does not look like a job posting"
+                      }.get(gate["kind"], "not a job posting")
+            return {"verdict": "skipped", "reason": reason,
+                    "doc_type": gate["kind"], "keyword_hits": gate["hits"]}
 
-        # Stage 2: is it legit?
         r = self.analyze_scam(text)
-        print("\n--- Stage 2: scam analysis ---")
-        print("Verdict:", r["verdict"])
-        print("Scam score (raw):", r["scam_score"])
-        print("Email domains:", ", ".join(sorted(r["domains"])) or "none found")
-        for name, p in r["probs"].items():
-            print(f"  {name}: {p:.0%}")
-        print("\n>>", r["decision"])
-        return "job_posting", r["decision"]
+        return {
+            "verdict": r["verdict"],                      # e.g. "legit"
+            "decision": r["decision"],
+            "scam_score": r["scam_score"],                # raw model output
+            "email_domains": r["domains"] or [],          # [] if none found
+            "flags": {name: round(p, 4) for name, p in r["probs"].items()},
+        }
 
-    def main(self) -> None:
-        images = self.find_images()
-        print(f"Found {len(images)} image(s) to analyze.")
+    def process_job(self, images: list) -> dict:
+        """
+        images: list of file paths (str/Path) OR upload objects exposing
+                `.filename` and `.file` (FastAPI UploadFile / Flask FileStorage-like).
+        """
+        try:
+            data = []
+            with tempfile.TemporaryDirectory() as tmp:
+                for i, img in enumerate(images):
+                    try:
+                        if isinstance(img, (str, Path)):
+                            path, name = Path(img), Path(img).name
+                        else:
+                            name = getattr(img, "filename", None) or f"image_{i}.jpg"
+                            path = Path(tmp) / f"{i}_{Path(name).name}"
+                            stream = getattr(img, "file", img)
+                            path.write_bytes(stream.read())
 
-        summary = []
-        for path in images:
-            try:
-                kind, outcome = self.process_image(path)
-            except Exception as exc:  # keep going if one image fails
-                print(f"[error] {path.name}: {exc}")
-                kind, outcome = "error", str(exc)
-            summary.append((path.name, kind, outcome))
+                        verdict = self._analyze_path(path)
+                    except Exception as exc:  # keep going if one image fails
+                        verdict = {"verdict": "error", "reason": str(exc)}
+                    data.append({"file_name": name if 'name' in locals() else f"image_{i}",
+                                "file_verdict": self._jsonable(verdict)})
 
-        print("\n\n===== SUMMARY =====")
-        width = max(len(n) for n, _, _ in summary)
-        for name, kind, outcome in summary:
-            print(f"{name:<{width}}  {kind:<12}  {outcome}")
+            return {"status": True, "message": "Successfully processed", "data": data}
+        except Exception as exc:
+            return {"status": False, "message": f"Processing failed: {exc}", "data": []}
+    # def main(self) -> None:
+    #     images = self.find_images()
+    #     print(f"Found {len(images)} image(s) to analyze.")
+
+    #     summary = []
+    #     for path in images:
+    #         try:
+    #             kind, outcome = self.process_image(path)
+    #         except Exception as exc:  # keep going if one image fails
+    #             print(f"[error] {path.name}: {exc}")
+    #             kind, outcome = "error", str(exc)
+    #         summary.append((path.name, kind, outcome))
+
+    #     print("\n\n===== SUMMARY =====")
+    #     width = max(len(n) for n, _, _ in summary)
+    #     for name, kind, outcome in summary:
+    #         print(f"{name:<{width}}  {kind:<12}  {outcome}")
 
 
-    if __name__ == "__main__":
-        main()
+    # if __name__ == "__main__":
+    #     main()
