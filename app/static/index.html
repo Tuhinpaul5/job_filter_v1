@@ -1,0 +1,222 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Job Posting Checker</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --card: #fff; --text: #1d2330; --muted: #6b7280; --border: #e3e6eb;
+    --accent: #2f6fed; --ok: #1f9d55; --warn: #c27c0e; --bad: #d64545; --skip: #6b7280;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; background: var(--bg); color: var(--text); }
+  main { max-width: 860px; margin: 0 auto; padding: 32px 16px 64px; }
+  h1 { margin: 0 0 4px; font-size: 1.6rem; }
+  .sub { margin: 0 0 24px; color: var(--muted); }
+
+  #drop {
+    border: 2px dashed var(--border); border-radius: 12px; background: var(--card);
+    padding: 36px 16px; text-align: center; cursor: pointer; transition: border-color .15s, background .15s;
+  }
+  #drop.over { border-color: var(--accent); background: #eef3ff; }
+  #drop strong { color: var(--accent); }
+  #drop small { display: block; margin-top: 6px; color: var(--muted); }
+
+  .actions { display: flex; gap: 8px; margin: 16px 0 24px; flex-wrap: wrap; }
+  button {
+    border: 0; border-radius: 8px; padding: 10px 18px; font: inherit; font-weight: 600; cursor: pointer;
+    background: var(--accent); color: #fff;
+  }
+  button.secondary { background: var(--card); color: var(--text); border: 1px solid var(--border); }
+  button:disabled { opacity: .5; cursor: not-allowed; }
+
+  .card {
+    display: flex; gap: 16px; background: var(--card); border: 1px solid var(--border);
+    border-left: 5px solid var(--skip); border-radius: 10px; padding: 16px; margin-bottom: 12px;
+  }
+  .card.ok { border-left-color: var(--ok); }
+  .card.warn { border-left-color: var(--warn); }
+  .card.bad { border-left-color: var(--bad); }
+  .card img { width: 120px; height: 120px; object-fit: cover; border-radius: 6px; flex-shrink: 0; background: var(--bg); }
+  .body { flex: 1; min-width: 0; }
+  .name { font-weight: 600; word-break: break-all; }
+  .decision { margin: 6px 0; font-size: 1.05rem; font-weight: 600; }
+  .meta { color: var(--muted); font-size: .9rem; }
+  .pending { color: var(--muted); font-style: italic; }
+
+  .probs { margin-top: 10px; display: grid; gap: 4px; }
+  .prob { display: grid; grid-template-columns: 150px 1fr 44px; align-items: center; gap: 8px; font-size: .85rem; }
+  .bar { height: 8px; background: var(--bg); border-radius: 4px; overflow: hidden; }
+  .bar span { display: block; height: 100%; background: var(--accent); }
+  .bar span.high { background: var(--bad); }
+
+  details { margin-top: 10px; font-size: .85rem; }
+  summary { cursor: pointer; color: var(--accent); }
+  pre { white-space: pre-wrap; background: var(--bg); padding: 10px; border-radius: 6px; max-height: 220px; overflow: auto; }
+
+  @media (max-width: 560px) {
+    .card { flex-direction: column; }
+    .card img { width: 100%; height: 180px; }
+    .prob { grid-template-columns: 110px 1fr 40px; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <h1>Job Posting Checker</h1>
+  <p class="sub">Upload screenshots of job postings to check whether they look legitimate or like a scam.</p>
+
+  <div id="drop">
+    <strong>Click to choose photos</strong> or drag them here
+    <small>PNG, JPG, JPEG, WEBP, BMP · max 10 MB each</small>
+  </div>
+  <input id="picker" type="file" accept=".png,.jpg,.jpeg,.webp,.bmp" multiple hidden>
+
+  <div class="actions">
+    <button id="analyze" disabled>Analyze</button>
+    <button id="clear" class="secondary" disabled>Clear</button>
+  </div>
+
+  <div id="results"></div>
+</main>
+
+<script>
+  const drop = document.getElementById("drop");
+  const picker = document.getElementById("picker");
+  const analyzeBtn = document.getElementById("analyze");
+  const clearBtn = document.getElementById("clear");
+  const results = document.getElementById("results");
+
+  let queue = [];   // [{ file, card }]
+  let busy = false;
+
+  drop.addEventListener("click", () => picker.click());
+  picker.addEventListener("change", () => { addFiles(picker.files); picker.value = ""; });
+  drop.addEventListener("dragover", e => { e.preventDefault(); drop.classList.add("over"); });
+  drop.addEventListener("dragleave", () => drop.classList.remove("over"));
+  drop.addEventListener("drop", e => {
+    e.preventDefault();
+    drop.classList.remove("over");
+    addFiles(e.dataTransfer.files);
+  });
+
+  function addFiles(files) {
+    for (const file of files) {
+      const card = document.createElement("div");
+      card.className = "card";
+      card.innerHTML = `
+        <img alt="">
+        <div class="body">
+          <div class="name"></div>
+          <div class="pending">Ready to analyze</div>
+        </div>`;
+      card.querySelector("img").src = URL.createObjectURL(file);
+      card.querySelector(".name").textContent = file.name;
+      results.appendChild(card);
+      queue.push({ file, card });
+    }
+    updateButtons();
+  }
+
+  function updateButtons() {
+    analyzeBtn.disabled = busy || queue.length === 0;
+    clearBtn.disabled = busy || results.children.length === 0;
+  }
+
+  clearBtn.addEventListener("click", () => {
+    results.querySelectorAll("img").forEach(img => URL.revokeObjectURL(img.src));
+    results.innerHTML = "";
+    queue = [];
+    updateButtons();
+  });
+
+  // Send one photo at a time so each result shows up as soon as it's ready
+  analyzeBtn.addEventListener("click", async () => {
+    busy = true;
+    updateButtons();
+    const todo = queue;
+    queue = [];
+
+    for (const { file, card } of todo) {
+      const body = card.querySelector(".body");
+      body.querySelector(".pending").textContent = "Analyzing… (OCR + model, a few seconds)";
+      try {
+        const form = new FormData();
+        form.append("file", file);
+        const res = await fetch("/process/image", { method: "POST", body: form });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || `HTTP ${res.status}`);
+        render(card, data);
+      } catch (err) {
+        renderError(card, err.message);
+      }
+    }
+
+    busy = false;
+    updateButtons();
+  });
+
+  function render(card, r) {
+    const body = card.querySelector(".body");
+    const name = body.querySelector(".name").outerHTML;
+
+    if (r.status !== "analyzed") {
+      card.classList.add("skip");
+      body.innerHTML = name;
+      addLine(body, "decision", "Skipped ⏩");
+      addLine(body, "meta", r.reason || "Not analyzed.");
+      if (r.text) addText(body, r.text);
+      return;
+    }
+
+    const d = r.decision || "";
+    card.classList.add(d.startsWith("LIKELY FAKE") ? "bad" : d.startsWith("SUSPICIOUS") ? "warn" : "ok");
+
+    body.innerHTML = name;
+    addLine(body, "decision", d);
+    addLine(body, "meta",
+      `Verdict: ${r.verdict} · Email domains: ${r.domains.length ? r.domains.join(", ") : "none found"}`);
+
+    const probs = document.createElement("div");
+    probs.className = "probs";
+    for (const [flag, p] of Object.entries(r.probs || {})) {
+      const pct = Math.round(p * 100);
+      const row = document.createElement("div");
+      row.className = "prob";
+      row.innerHTML = `<span></span><div class="bar"><span></span></div><span></span>`;
+      row.children[0].textContent = flag.replaceAll("_", " ");
+      row.querySelector(".bar span").style.width = pct + "%";
+      if (p > 0.6) row.querySelector(".bar span").classList.add("high");
+      row.children[2].textContent = pct + "%";
+      probs.appendChild(row);
+    }
+    body.appendChild(probs);
+
+    if (r.text) addText(body, r.text);
+  }
+
+  function renderError(card, message) {
+    card.classList.add("bad");
+    const body = card.querySelector(".body");
+    body.innerHTML = body.querySelector(".name").outerHTML;
+    addLine(body, "decision", "Error");
+    addLine(body, "meta", message);
+  }
+
+  function addLine(parent, cls, text) {
+    const el = document.createElement("div");
+    el.className = cls;
+    el.textContent = text;
+    parent.appendChild(el);
+  }
+
+  function addText(parent, text) {
+    const details = document.createElement("details");
+    details.innerHTML = "<summary>Show extracted text</summary><pre></pre>";
+    details.querySelector("pre").textContent = text;
+    parent.appendChild(details);
+  }
+</script>
+</body>
+</html>

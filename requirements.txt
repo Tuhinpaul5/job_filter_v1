@@ -3,3 +3,7 @@ easyocr
 torch
 torchvision
 python-dotenv
+fastapi
+pydantic
+uvicorn[standard]
+python-multipart

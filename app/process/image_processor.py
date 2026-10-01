@@ -1,7 +1,7 @@
 
 import re
 
-from context import FREE_MAIL, GATE_QUESTIONS, IMAGE_EXTS, JOB_KEYWORDS, KEYWORD_PASS, MIN_TEXT_CHARS, SCAM_QUESTIONS
+from app.process.context import JOB_KEYWORDS
 
 class ImageProcessor:
     def __init__(self):

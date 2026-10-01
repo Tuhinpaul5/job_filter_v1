@@ -15,12 +15,12 @@ import sys
 from pathlib import Path
 
 from app.helpers.ocr import Ocr
-from image_processor import ImageProcessor
+from app.process.image_processor import ImageProcessor
+from app.process.context import FREE_MAIL, GATE_QUESTIONS, IMAGE_EXTS, KEYWORD_PASS, MIN_TEXT_CHARS, SCAM_QUESTIONS
 
 from config import IMAGE_FOLDER
 from laya import Router
 
-from context import FREE_MAIL, GATE_QUESTIONS, IMAGE_EXTS, KEYWORD_PASS, MIN_TEXT_CHARS, SCAM_QUESTIONS
 
 
 class Process:
@@ -29,16 +29,15 @@ class Process:
         self.SOFT_FLAGS = ["unrealistic_pay", "vague_details", "urgency_pressure"]
 
         self._reader = None
-        self. _router = None
+        self._router = None
 
         self.ocr = Ocr()
         self.image_processor = ImageProcessor()
 
     def get_router(self) -> Router:
-        global _router
-        if _router is None:
-            _router = Router()
-        return _router
+        if self._router is None:
+            self._router = Router()
+        return self._router
 
     # For junk image filtering screenshots
     def check_is_job_post(self, text: str) -> dict:
