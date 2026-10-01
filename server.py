@@ -22,7 +22,7 @@ app = FastAPI(title="Job Posting Checker", version="0.1.0", lifespan=lifespan)
 app.include_router(process_router)
 
 
-FRONTEND = Path(__file__).parent / "static" / "index.html"
+FRONTEND = Path(__file__).parent / "app" / "static" / "index.html"
 
 
 @app.get("/", include_in_schema=False)

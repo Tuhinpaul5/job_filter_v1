@@ -140,24 +140,3 @@ class Process:
             return {"status": True, "message": "Successfully processed", "data": data}
         except Exception as exc:
             return {"status": False, "message": f"Processing failed: {exc}", "data": []}
-    # def main(self) -> None:
-    #     images = self.find_images()
-    #     print(f"Found {len(images)} image(s) to analyze.")
-
-    #     summary = []
-    #     for path in images:
-    #         try:
-    #             kind, outcome = self.process_image(path)
-    #         except Exception as exc:  # keep going if one image fails
-    #             print(f"[error] {path.name}: {exc}")
-    #             kind, outcome = "error", str(exc)
-    #         summary.append((path.name, kind, outcome))
-
-    #     print("\n\n===== SUMMARY =====")
-    #     width = max(len(n) for n, _, _ in summary)
-    #     for name, kind, outcome in summary:
-    #         print(f"{name:<{width}}  {kind:<12}  {outcome}")
-
-
-    # if __name__ == "__main__":
-    #     main()
